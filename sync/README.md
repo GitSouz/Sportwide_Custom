@@ -22,16 +22,16 @@ The tables to sync are defined in the `TABLES` list at the top of the notebook.
 filter; connection and auth are shared across all of them.
 
 The **source catalog is appended to the target table name** at runtime (schema
-kept): with `catalog = esxccc`, a `target` of `Insights.CustomerStage_OrgsId_3`
-is written to `Insights.CustomerStage_OrgsId_3_esxccc`. Keep the `target` values
-below catalog-free — the suffix is added by `qualify_target()`.
+kept): with `catalog = esxccc`, a `target` of `Insights.CustomerStage` is written
+to `Insights.CustomerStage_esxccc`. Keep the `target` values below catalog-free —
+the suffix is added by `qualify_target()`.
 
-| Source (under `catalog`) | Target | Filter |
+| Source (under `catalog`) | Target (before catalog suffix) | Filter |
 |---|---|---|
-| `global.dim_customer` | `Insights.CustomerStage_OrgsId_3` | `ProviderCode = 'STXWBK'` and not excluded |
-| `global.dim_product_band` | `Insights.ProductBandStage_OrgsId_3` | not excluded |
-| `global.dim_product_bridge` | `Insights.ProductStage_OrgsId_3` | classified, not excluded, real product types |
-| `global.vwfacttransaction` | `Insights.TransactionStage_OrgsId_3` | `ProviderCode = 'STXWBK'` and `year(OrderDate) >= year(current_date) - 1` |
+| `global.dim_customer` | `Insights.CustomerStage` | `ProviderCode = 'STXWBK'` and not excluded (selected columns only) |
+| `global.dim_product_band` | `Insights.ProductBandStage` | not excluded |
+| `global.dim_product_bridge` | `Insights.ProductStage` | not excluded, real product types |
+| `global.vwfacttransaction` | `Insights.TransactionStage` | `ProviderCode = 'STXWBK'` |
 
 ## 1. Service principal & secret
 

@@ -37,29 +37,28 @@
 TABLES = [
     {
         "source": "global.dim_customer",
-        "target": "Insights.CustomerStage_OrgsId_3",
+        "target": "Insights.CustomerStage",
         "where": "ProviderCode = 'STXWBK' AND coalesce(ExclusionFilter, false) <> true",
-        # "columns": ["CustomerId", "CustomerName", "ProviderCode"],  # optional
+        "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","'3' as OrgsId"],  # optional
     },
     {
         "source": "global.dim_product_band",
-        "target": "Insights.ProductBandStage_OrgsId_3",
+        "target": "Insights.ProductBandStage",
         "where": "coalesce(ExclusionFilter, false) <> true",
     },
     {
         "source": "global.dim_product_bridge",
-        "target": "Insights.ProductStage_OrgsId_3",
+        "target": "Insights.ProductStage",
         "where": (
-            "coalesce(ClassificationStatus, '') = 'Classified' "
-            "AND coalesce(ExclusionFilter, false) <> true "
+            "coalesce(ExclusionFilter, false) <> true "
             "AND ProductType NOT LIKE 'Infer From%' "
             "AND ProductType != 'All Products'"
         ),
     },
     {
         "source": "global.vwfacttransaction",
-        "target": "Insights.TransactionStage_OrgsId_3",
-        "where": "ProviderCode = 'STXWBK' AND year(OrderDate) >= year(current_date()) - 1",
+        "target": "Insights.TransactionStage",
+        "where": "ProviderCode = 'STXWBK'",
     },
 ]
 
@@ -92,7 +91,7 @@ sql_database = dbutils.widgets.get("sql_database")
 tenant_id = dbutils.widgets.get("tenant_id")
 client_id = dbutils.widgets.get("client_id")
 secret_scope = dbutils.widgets.get("secret_scope")
-client_secret = dbutils.secrets.get(secret_scope, dbutils.widgets.get("secret_client_secret_key"))
+client_secret = dbutils.secrets.get('key-vault', 'datamgmt-sp-key')
 
 assert sql_server, "sql_server parameter is required"
 assert sql_database, "sql_database parameter is required"
