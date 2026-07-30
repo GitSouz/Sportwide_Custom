@@ -1,0 +1,11 @@
+# Secrets / local overrides — never commit connection strings or passwords
+.env
+.env.*
+db/flyway.local.conf
+*.local.conf
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
