@@ -25,22 +25,42 @@
 
 # MAGIC %md
 # MAGIC ## Tables to sync
-# MAGIC One entry per table. `where` is an optional Spark-SQL predicate (omit or
-# MAGIC set to `None` to copy the whole table). Source names are resolved under the
-# MAGIC `catalog` widget below.
+# MAGIC One entry per table:
+# MAGIC - `source` / `target` — schema.table names (source resolved under `catalog`).
+# MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter).
+# MAGIC - `columns` — optional list of columns to select (omit or `None` = all,
+# MAGIC   i.e. `SELECT *`). Use this to load only the columns you need, or to skip
+# MAGIC   an unwanted complex column entirely.
 
 # COMMAND ----------
 
 TABLES = [
     {
+        "source": "global.dim_customer",
+        "target": "Insights.CustomerStage_OrgsId_3",
+        "where": "ProviderCode = 'STXWBK' AND coalesce(ExclusionFilter, false) <> true",
+        # "columns": ["CustomerId", "CustomerName", "ProviderCode"],  # optional
+    },
+    {
+        "source": "global.dim_product_band",
+        "target": "Insights.ProductBandStage_OrgsId_3",
+        "where": "coalesce(ExclusionFilter, false) <> true",
+    },
+    {
+        "source": "global.dim_product_bridge",
+        "target": "Insights.ProductStage_OrgsId_3",
+        "where": (
+            "coalesce(ClassificationStatus, '') = 'Classified' "
+            "AND coalesce(ExclusionFilter, false) <> true "
+            "AND ProductType NOT LIKE 'Infer From%' "
+            "AND ProductType != 'All Products'"
+        ),
+    },
+    {
         "source": "global.vwfacttransaction",
-        "target": "dbo.FactTransaction",
+        "target": "Insights.TransactionStage_OrgsId_3",
         "where": "ProviderCode = 'STXWBK' AND year(OrderDate) >= year(current_date()) - 1",
     },
-    # --- add more tables here, e.g. ---
-    # {"source": "global.<view2>", "target": "dbo.<Table2>", "where": None},
-    # {"source": "global.<view3>", "target": "dbo.<Table3>", "where": None},
-    # {"source": "global.<view4>", "target": "dbo.<Table4>", "where": None},
 ]
 
 # COMMAND ----------
@@ -59,9 +79,9 @@ dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.n
 dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
 
 # Entra ID service principal
-dbutils.widgets.text("tenant_id", "", "Entra tenant_id")
-dbutils.widgets.text("client_id", "", "Service principal client_id")
-dbutils.widgets.text("secret_scope", "kv-int-uks-prd-01", "Databricks secret scope (backed by Key Vault)")
+dbutils.widgets.text("tenant_id", "afa21132-558b-4712-9dd1-72dbaf33febb", "Entra tenant_id")
+dbutils.widgets.text("client_id", "e5a7dd31-c5b9-4fea-a286-7ee303c36985", "Service principal client_id")
+dbutils.widgets.text("secret_scope", "key-vault", "Databricks secret scope (backed by Key Vault)")
 dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
 catalog = dbutils.widgets.get("catalog")
@@ -117,14 +137,32 @@ jdbc_url = (
 
 # COMMAND ----------
 
+from pyspark.sql.functions import col, to_json
+from pyspark.sql.types import ArrayType, MapType, StructType
+
 spark.sql(f"USE CATALOG {catalog}")
 
 
-def sync_table(source: str, target: str, where: str | None) -> int:
-    query = f"SELECT * FROM {source}"
+def jdbc_safe(df):
+    """SQL Server/JDBC has no array/map/struct types. Serialize any complex
+    column to a JSON string so it lands as nvarchar instead of failing with
+    'Can't get JDBC type for array<...>'. Scalar columns pass through unchanged.
+    """
+    projected = []
+    for field in df.schema.fields:
+        if isinstance(field.dataType, (ArrayType, MapType, StructType)):
+            projected.append(to_json(col(field.name)).alias(field.name))
+        else:
+            projected.append(col(field.name))
+    return df.select(*projected)
+
+
+def sync_table(source, target, where=None, columns=None) -> int:
+    select_list = ", ".join(columns) if columns else "*"
+    query = f"SELECT {select_list} FROM {source}"
     if where:
         query += f" WHERE {where}"
-    df = spark.sql(query)
+    df = jdbc_safe(spark.sql(query))
 
     row_count = df.count()
     print(f"{source} -> {sql_database}.{target}: {row_count:,} rows")
@@ -145,7 +183,7 @@ def sync_table(source: str, target: str, where: str | None) -> int:
 
 results = []
 for t in TABLES:
-    n = sync_table(t["source"], t["target"], t.get("where"))
+    n = sync_table(t["source"], t["target"], t.get("where"), t.get("columns"))
     results.append((t["source"], t["target"], n))
 
 print("\nSync complete:")
