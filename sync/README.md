@@ -21,14 +21,22 @@ Notebook: [`fact_transaction_to_azure_sql.py`](fact_transaction_to_azure_sql.py)
 
 Auth is via an Entra ID (Azure AD) **service principal**. You need three things:
 `tenant_id`, `client_id`, and a **client secret** — `tenant_id` + `client_id`
-alone cannot authenticate. Store only the client secret in a Databricks **secret
-scope** (ideally Key Vault-backed); the tenant/client IDs are non-secret job
-parameters.
+alone cannot authenticate. The tenant/client IDs are non-secret job parameters;
+the client secret is read from Azure Key Vault through a Databricks secret scope.
 
-```bash
-databricks secrets create-scope kv-scope
-databricks secrets put-secret kv-scope sp-client-secret   # the SP client secret
-```
+The client secret already lives in Key Vault:
+
+| | |
+|---|---|
+| Key Vault | `kv-int-uks-prd-01` |
+| Secret name | `datamgmt-sp-key` |
+
+Create a Databricks **secret scope backed by that Key Vault** (Databricks reads
+secrets by *scope* + *key*, not by vault name). Name the scope the same as the
+vault for clarity — do this once in the UI at
+`https://<workspace-url>#secrets/createScope`, pointing it at the
+`kv-int-uks-prd-01` resource. The notebook then reads
+`dbutils.secrets.get("kv-int-uks-prd-01", "datamgmt-sp-key")`.
 
 The service principal must also exist as a user **inside the Azure SQL
 database** with rights to truncate/insert into the target table. Connect once as
@@ -63,8 +71,8 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 | `target_table` | `dbo.FactTransaction` |
 | `tenant_id` | `<entra-tenant-id>` |
 | `client_id` | `<service-principal-client-id>` |
-| `secret_scope` | `kv-scope` |
-| `secret_client_secret_key` | `sp-client-secret` |
+| `secret_scope` | `kv-int-uks-prd-01` |
+| `secret_client_secret_key` | `datamgmt-sp-key` |
 
 Add a **daily schedule** (off-peak hour), enable **retries**, and set a failure
 notification. That's the whole pipeline.

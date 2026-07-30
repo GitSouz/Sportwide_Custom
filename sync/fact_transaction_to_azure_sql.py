@@ -39,8 +39,8 @@ dbutils.widgets.text("target_table", "dbo.FactTransaction", "Target schema.table
 # Entra ID service principal
 dbutils.widgets.text("tenant_id", "", "Entra tenant_id")
 dbutils.widgets.text("client_id", "", "Service principal client_id")
-dbutils.widgets.text("secret_scope", "kv-scope", "Databricks secret scope")
-dbutils.widgets.text("secret_client_secret_key", "sp-client-secret", "Secret key: SP client secret")
+dbutils.widgets.text("secret_scope", "kv-int-uks-prd-01", "Databricks secret scope (backed by Key Vault)")
+dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
 catalog = dbutils.widgets.get("catalog")
 source_table = dbutils.widgets.get("source_table")
