@@ -111,6 +111,8 @@ print(f"Source rows to load: {row_count:,}")
 
 # MAGIC %md
 # MAGIC ## Write full overwrite to Azure SQL
+# MAGIC Uses Spark's built-in `jdbc` data source (the Microsoft SQL Server driver
+# MAGIC is bundled in the Databricks runtime — no extra library needed).
 # MAGIC Authenticates with the Entra `accessToken` (no user/password). First run
 # MAGIC creates the target table (inferred schema); subsequent runs TRUNCATE +
 # MAGIC reload. For production-grade column types/indexes, pre-create the table
@@ -126,13 +128,14 @@ jdbc_url = (
 )
 
 (
-    df.write.format("com.microsoft.sqlserver.jdbc.spark")
+    df.write.format("jdbc")
     .mode("overwrite")
     .option("truncate", "true")  # TRUNCATE + reload; keep table shape/indexes/grants
     .option("url", jdbc_url)
     .option("dbtable", target_table)
+    .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
     .option("accessToken", access_token)  # Entra ID service-principal auth
-    .option("schemaCheckEnabled", "false")
+    .option("batchsize", "10000")  # rows per insert batch (tune for throughput)
     .save()
 )
 

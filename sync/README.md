@@ -10,7 +10,7 @@ Sportwide Azure SQL database (the same database whose schema is versioned under
 | **Filter** | `ProviderCode = 'STXWBK'` and `YEAR(OrderDate) >= YEAR(current_date) - 1` (current + previous order year) |
 | **Target** | `dbo.FactTransaction` in `Sportwide` on `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
 | **Load type** | Full overwrite — `TRUNCATE` + reload every run |
-| **Engine** | Spark SQL Server connector (`com.microsoft.sqlserver.jdbc.spark`, bulk insert) |
+| **Engine** | Spark built-in `jdbc` data source (Microsoft SQL Server driver, bundled in DBR) |
 | **Auth** | Entra ID (Azure AD) **service principal** — access token, no SQL login |
 | **Schedule** | Databricks Job / Workflow, daily trigger |
 
@@ -53,9 +53,14 @@ ALTER ROLE db_ddladmin  ADD MEMBER [<sp-display-name>];  -- needed for TRUNCATE 
 
 Install on the job cluster:
 
-- **Spark SQL Server connector** (Maven) — match your Spark/Scala version, e.g.
-  `com.microsoft.azure:spark-mssql-connector_2.12:1.4.0`.
 - **`azure-identity`** (PyPI) — used to acquire the Entra access token.
+
+The write uses Spark's built-in `jdbc` data source; the Microsoft SQL Server
+JDBC driver ships with the Databricks runtime, so no connector JAR is required.
+(If you later need faster bulk `BULK INSERT` throughput on large loads, install
+the `com.microsoft.azure:spark-mssql-connector` Maven library matching your
+Spark version and switch the write's `.format(...)` back to
+`com.microsoft.sqlserver.jdbc.spark`.)
 
 ## 3. Create the job
 
