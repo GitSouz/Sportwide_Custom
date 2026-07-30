@@ -27,7 +27,9 @@
 # MAGIC ## Tables to sync
 # MAGIC One entry per table:
 # MAGIC - `source` / `target` — schema.table names (source resolved under `catalog`).
-# MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter).
+# MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter). Use
+# MAGIC   the `{provider_code}` placeholder to inject the `provider_code` widget
+# MAGIC   value instead of hard-coding it.
 # MAGIC - `columns` — optional list of columns to select (omit or `None` = all,
 # MAGIC   i.e. `SELECT *`). Use this to load only the columns you need, or to skip
 # MAGIC   an unwanted complex column entirely.
@@ -38,7 +40,7 @@ TABLES = [
     {
         "source": "global.dim_customer",
         "target": "Insights.CustomerStage",
-        "where": "ProviderCode = 'STXWBK' AND coalesce(ExclusionFilter, false) <> true",
+        "where": "ProviderCode = '{provider_code}' AND coalesce(ExclusionFilter, false) <> true",
         "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","'3' as OrgsId"],  # optional
     },
     {
@@ -58,7 +60,7 @@ TABLES = [
     {
         "source": "global.vwfacttransaction",
         "target": "Insights.TransactionStage",
-        "where": "ProviderCode = 'STXWBK'",
+        "where": "ProviderCode = '{provider_code}'",
     },
 ]
 
@@ -73,6 +75,7 @@ TABLES = [
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "esxccc", "Source Unity Catalog")
+dbutils.widgets.text("provider_code", "STXWBK", "ProviderCode filter ({provider_code} in WHERE)")
 
 dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
 dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
@@ -84,6 +87,7 @@ dbutils.widgets.text("secret_scope", "key-vault", "Databricks secret scope (back
 dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
 catalog = dbutils.widgets.get("catalog")
+provider_code = dbutils.widgets.get("provider_code")
 
 sql_server = dbutils.widgets.get("sql_server")
 sql_database = dbutils.widgets.get("sql_database")
@@ -193,8 +197,11 @@ def sync_table(source, target, where=None, columns=None) -> int:
 
 results = []
 for t in TABLES:
+    where = t.get("where")
+    if where:
+        where = where.replace("{provider_code}", provider_code)
     target = qualify_target(t["target"], catalog)
-    n = sync_table(t["source"], target, t.get("where"), t.get("columns"))
+    n = sync_table(t["source"], target, where, t.get("columns"))
     results.append((t["source"], target, n))
 
 print("\nSync complete:")

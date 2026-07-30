@@ -85,6 +85,7 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 | Parameter | Example |
 |---|---|
 | `catalog` | `esxccc` |
+| `provider_code` | `STXWBK` |
 | `sql_server` | `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
 | `sql_database` | `Sportwide` |
 | `tenant_id` | `<entra-tenant-id>` |
@@ -114,7 +115,8 @@ Add one entry to the `TABLES` list at the top of the notebook:
 - `source` is resolved under the `catalog` widget (`esxccc`).
 - `where` is an optional **Spark SQL** predicate (use `current_date()`, not
   `GETDATE()`; use bare/backtick identifiers, not `[brackets]`); `None` = no
-  filter.
+  filter. Put `{provider_code}` where you want the `provider_code` widget value
+  injected, e.g. `ProviderCode = '{provider_code}'` — don't hard-code it.
 - `columns` is an optional whitelist — list only the columns you want, or omit
   for all. Handy to keep the target narrow or to drop an unwanted complex
   column.
