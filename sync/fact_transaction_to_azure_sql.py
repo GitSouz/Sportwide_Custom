@@ -76,6 +76,7 @@ TABLES = [
 
 dbutils.widgets.text("catalog", "esxccc", "Source Unity Catalog")
 dbutils.widgets.text("provider_code", "STXWBK", "ProviderCode filter ({provider_code} in WHERE)")
+dbutils.widgets.text("load_timestamp_column", "LoadedAtUtc", "Load-timestamp column (blank = off)")
 
 dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
 dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
@@ -88,6 +89,7 @@ dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key:
 
 catalog = dbutils.widgets.get("catalog")
 provider_code = dbutils.widgets.get("provider_code")
+load_timestamp_column = dbutils.widgets.get("load_timestamp_column").strip()
 
 sql_server = dbutils.widgets.get("sql_server")
 sql_database = dbutils.widgets.get("sql_database")
@@ -140,7 +142,7 @@ jdbc_url = (
 
 # COMMAND ----------
 
-from pyspark.sql.functions import col, to_json
+from pyspark.sql.functions import col, current_timestamp, to_json
 from pyspark.sql.types import ArrayType, MapType, StructType
 
 spark.sql(f"USE CATALOG {catalog}")
@@ -177,6 +179,10 @@ def sync_table(source, target, where=None, columns=None) -> int:
     if where:
         query += f" WHERE {where}"
     df = jdbc_safe(spark.sql(query))
+
+    # Stamp each row with the sync run time (lands as a SQL Server datetime2).
+    if load_timestamp_column:
+        df = df.withColumn(load_timestamp_column, current_timestamp())
 
     row_count = df.count()
     print(f"{source} -> {sql_database}.{target}: {row_count:,} rows")

@@ -86,6 +86,7 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 |---|---|
 | `catalog` | `esxccc` |
 | `provider_code` | `STXWBK` |
+| `load_timestamp_column` | `LoadedAtUtc` (blank = don't add it) |
 | `sql_server` | `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
 | `sql_database` | `Sportwide` |
 | `tenant_id` | `<entra-tenant-id>` |
@@ -135,6 +136,10 @@ through the Azure SQL **server firewall**, otherwise the connection is refused.
   and grants. With `truncate=true` it keeps the table and just replaces rows.
 - **Not atomic.** During truncate+reload the table is briefly empty; readers can
   see a partial table mid-load. If that matters, load a staging table and swap.
+- **Load timestamp.** Every row gets a `load_timestamp_column` (default
+  `LoadedAtUtc`) set to `current_timestamp()` at run time, landing as a SQL
+  Server `datetime2`. Databricks sessions default to UTC, so the value is UTC;
+  blank the widget to omit the column.
 - **Complex columns → JSON.** SQL Server has no array/map/struct type, so a
   `SELECT *` over a source with such a column fails with *"Can't get JDBC type
   for array<...>"*. The notebook's `jdbc_safe()` step auto-serializes any
