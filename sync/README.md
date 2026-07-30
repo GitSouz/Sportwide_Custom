@@ -1,21 +1,29 @@
 # Sync — Databricks → Azure SQL (daily)
 
-Daily full-overwrite sync of ticket-transaction data from Databricks into the
-Sportwide Azure SQL database (the same database whose schema is versioned under
-[`../db`](../db)).
+Daily full-overwrite sync of one or more Databricks tables/views from Databricks
+into the Sportwide Azure SQL database (the same database whose schema is
+versioned under [`../db`](../db)).
 
 | | |
 |---|---|
-| **Source** | `esxccc.global.vwfacttransaction` |
-| **Filter** | `ProviderCode = 'STXWBK'` and `YEAR(OrderDate) >= YEAR(current_date) - 1` (current + previous order year) |
-| **Target** | `dbo.FactTransaction` in Azure SQL |
-| **Load type** | Full overwrite — `TRUNCATE` + reload every run |
-| **Engine** | Spark SQL Server connector (`com.microsoft.sqlserver.jdbc.spark`, bulk insert) |
+| **Target DB** | `Sportwide` on `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
+| **Load type** | Full overwrite — `TRUNCATE` + reload every run, per table |
+| **Engine** | Spark built-in `jdbc` data source (Microsoft SQL Server driver, bundled in DBR) |
 | **Auth** | Entra ID (Azure AD) **service principal** — access token, no SQL login |
 | **Schedule** | Databricks Job / Workflow, daily trigger |
 
 Notebook: [`fact_transaction_to_azure_sql.py`](fact_transaction_to_azure_sql.py)
 (a Databricks notebook stored as source).
+
+### Tables synced
+
+The tables to sync are defined in the `TABLES` list at the top of the notebook.
+**Adding a table is one entry** — `source`, `target`, and an optional `where`
+filter; connection and auth are shared across all of them.
+
+| Source (under `catalog`) | Target | Filter |
+|---|---|---|
+| `global.vwfacttransaction` | `dbo.FactTransaction` | `ProviderCode = 'STXWBK'` and `year(OrderDate) >= year(current_date) - 1` |
 
 ## 1. Service principal & secret
 
@@ -53,9 +61,14 @@ ALTER ROLE db_ddladmin  ADD MEMBER [<sp-display-name>];  -- needed for TRUNCATE 
 
 Install on the job cluster:
 
-- **Spark SQL Server connector** (Maven) — match your Spark/Scala version, e.g.
-  `com.microsoft.azure:spark-mssql-connector_2.12:1.4.0`.
 - **`azure-identity`** (PyPI) — used to acquire the Entra access token.
+
+The write uses Spark's built-in `jdbc` data source; the Microsoft SQL Server
+JDBC driver ships with the Databricks runtime, so no connector JAR is required.
+(If you later need faster bulk `BULK INSERT` throughput on large loads, install
+the `com.microsoft.azure:spark-mssql-connector` Maven library matching your
+Spark version and switch the write's `.format(...)` back to
+`com.microsoft.sqlserver.jdbc.spark`.)
 
 ## 3. Create the job
 
@@ -64,18 +77,32 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 | Parameter | Example |
 |---|---|
 | `catalog` | `esxccc` |
-| `source_table` | `global.vwfacttransaction` |
-| `provider_code` | `STXWBK` |
-| `sql_server` | `<server>.database.windows.net` |
-| `sql_database` | `<db>` |
-| `target_table` | `dbo.FactTransaction` |
+| `sql_server` | `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
+| `sql_database` | `Sportwide` |
 | `tenant_id` | `<entra-tenant-id>` |
 | `client_id` | `<service-principal-client-id>` |
 | `secret_scope` | `kv-int-uks-prd-01` |
 | `secret_client_secret_key` | `datamgmt-sp-key` |
 
+(The list of tables is code, not a parameter — edit the `TABLES` list in the
+notebook.)
+
 Add a **daily schedule** (off-peak hour), enable **retries**, and set a failure
 notification. That's the whole pipeline.
+
+## Adding another table
+
+Add one entry to the `TABLES` list at the top of the notebook:
+
+```python
+{"source": "global.<view>", "target": "dbo.<Table>", "where": "<optional predicate or None>"},
+```
+
+- `source` is resolved under the `catalog` widget (`esxccc`).
+- `where` is an optional **Spark SQL** predicate (use `current_date()`, not
+  `GETDATE()`); set it to `None` to copy the whole table.
+- The SP needs write access to each new target (the `db_datawriter` /
+  `db_ddladmin` grant already covers the whole database).
 
 ## 4. Azure SQL firewall
 

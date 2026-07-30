@@ -1,22 +1,47 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Sync `vwfacttransaction` -> Azure SQL (daily, full overwrite)
+# MAGIC # Sync Databricks -> Azure SQL (daily, full overwrite)
 # MAGIC
-# MAGIC Reads `esxccc.global.vwfacttransaction` (filtered to ProviderCode `STXWBK`
-# MAGIC for the current and previous order year) and writes a full daily mirror to
-# MAGIC Azure SQL via the Spark SQL Server connector (bulk insert).
+# MAGIC Copies one or more Databricks tables/views into the `Sportwide` Azure SQL
+# MAGIC database as a full daily mirror, using Spark's built-in `jdbc` data source
+# MAGIC (the Microsoft SQL Server driver is bundled in the Databricks runtime).
+# MAGIC
+# MAGIC **Adding a table = one entry in the `TABLES` list below.** Everything else
+# MAGIC (connection, auth, load logic) is shared.
 # MAGIC
 # MAGIC **Auth:** Entra ID (Azure AD) **service principal** — the notebook acquires
 # MAGIC an access token from `tenant_id` + `client_id` + client secret and connects
 # MAGIC with it (no SQL username/password).
 # MAGIC
-# MAGIC **Load type:** full overwrite with `truncate=true` (TRUNCATE + reload).
-# MAGIC Using `truncate` keeps the target table's shape, indexes, constraints and
-# MAGIC grants; without it the connector would DROP and recreate the table.
+# MAGIC **Load type:** full overwrite with `truncate=true` (TRUNCATE + reload) per
+# MAGIC table. `truncate` keeps each target table's shape, indexes, constraints and
+# MAGIC grants; without it the driver would DROP and recreate the table.
 # MAGIC
 # MAGIC Schedule this notebook as a **Databricks Job / Workflow** with a daily
-# MAGIC trigger. See `sync/README.md` for setup (secret scope, cluster libraries,
+# MAGIC trigger. See `sync/README.md` for setup (secret scope, `azure-identity`,
 # MAGIC granting the SP access to the database, firewall, scheduling).
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Tables to sync
+# MAGIC One entry per table. `where` is an optional Spark-SQL predicate (omit or
+# MAGIC set to `None` to copy the whole table). Source names are resolved under the
+# MAGIC `catalog` widget below.
+
+# COMMAND ----------
+
+TABLES = [
+    {
+        "source": "global.vwfacttransaction",
+        "target": "dbo.FactTransaction",
+        "where": "ProviderCode = 'STXWBK' AND year(OrderDate) >= year(current_date()) - 1",
+    },
+    # --- add more tables here, e.g. ---
+    # {"source": "global.<view2>", "target": "dbo.<Table2>", "where": None},
+    # {"source": "global.<view3>", "target": "dbo.<Table3>", "where": None},
+    # {"source": "global.<view4>", "target": "dbo.<Table4>", "where": None},
+]
 
 # COMMAND ----------
 
@@ -29,12 +54,9 @@
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "esxccc", "Source Unity Catalog")
-dbutils.widgets.text("source_table", "global.vwfacttransaction", "Source schema.table")
-dbutils.widgets.text("provider_code", "STXWBK", "ProviderCode filter")
 
-dbutils.widgets.text("sql_server", "", "Azure SQL server (<name>.database.windows.net)")
-dbutils.widgets.text("sql_database", "", "Azure SQL database")
-dbutils.widgets.text("target_table", "dbo.FactTransaction", "Target schema.table")
+dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
+dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
 
 # Entra ID service principal
 dbutils.widgets.text("tenant_id", "", "Entra tenant_id")
@@ -43,12 +65,9 @@ dbutils.widgets.text("secret_scope", "kv-int-uks-prd-01", "Databricks secret sco
 dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
 catalog = dbutils.widgets.get("catalog")
-source_table = dbutils.widgets.get("source_table")
-provider_code = dbutils.widgets.get("provider_code")
 
 sql_server = dbutils.widgets.get("sql_server")
 sql_database = dbutils.widgets.get("sql_database")
-target_table = dbutils.widgets.get("target_table")
 
 tenant_id = dbutils.widgets.get("tenant_id")
 client_id = dbutils.widgets.get("client_id")
@@ -81,43 +100,6 @@ credential = ClientSecretCredential(
 # Resource scope for Azure SQL Database.
 access_token = credential.get_token("https://database.windows.net/.default").token
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Read source with filters
-# MAGIC ```
-# MAGIC WHERE ProviderCode = 'STXWBK'
-# MAGIC AND   YEAR(OrderDate) >= YEAR(GETDATE()) - 1
-# MAGIC ```
-# MAGIC Note: Spark SQL has no `GETDATE()`; the equivalent is `current_date()`.
-
-# COMMAND ----------
-
-spark.sql(f"USE CATALOG {catalog}")
-
-df = spark.sql(
-    f"""
-    SELECT *
-    FROM {source_table}
-    WHERE ProviderCode = '{provider_code}'
-    AND   year(OrderDate) >= year(current_date()) - 1
-    """
-)
-
-row_count = df.count()
-print(f"Source rows to load: {row_count:,}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Write full overwrite to Azure SQL
-# MAGIC Authenticates with the Entra `accessToken` (no user/password). First run
-# MAGIC creates the target table (inferred schema); subsequent runs TRUNCATE +
-# MAGIC reload. For production-grade column types/indexes, pre-create the table
-# MAGIC via a `db/` migration (see `sync/README.md`).
-
-# COMMAND ----------
-
 jdbc_url = (
     f"jdbc:sqlserver://{sql_server}:1433;"
     f"database={sql_database};"
@@ -125,15 +107,47 @@ jdbc_url = (
     "hostNameInCertificate=*.database.windows.net;loginTimeout=30"
 )
 
-(
-    df.write.format("com.microsoft.sqlserver.jdbc.spark")
-    .mode("overwrite")
-    .option("truncate", "true")  # TRUNCATE + reload; keep table shape/indexes/grants
-    .option("url", jdbc_url)
-    .option("dbtable", target_table)
-    .option("accessToken", access_token)  # Entra ID service-principal auth
-    .option("schemaCheckEnabled", "false")
-    .save()
-)
+# COMMAND ----------
 
-print(f"Loaded {row_count:,} rows into {sql_database}.{target_table}")
+# MAGIC %md
+# MAGIC ## Sync each table (read with optional filter -> full overwrite)
+# MAGIC Full overwrite with `truncate=true`. First run of a target creates it with
+# MAGIC an inferred schema; later runs TRUNCATE + reload. For production-grade
+# MAGIC column types/indexes, pre-create the target via a `db/` migration.
+
+# COMMAND ----------
+
+spark.sql(f"USE CATALOG {catalog}")
+
+
+def sync_table(source: str, target: str, where: str | None) -> int:
+    query = f"SELECT * FROM {source}"
+    if where:
+        query += f" WHERE {where}"
+    df = spark.sql(query)
+
+    row_count = df.count()
+    print(f"{source} -> {sql_database}.{target}: {row_count:,} rows")
+
+    (
+        df.write.format("jdbc")
+        .mode("overwrite")
+        .option("truncate", "true")  # TRUNCATE + reload; keep table shape/indexes/grants
+        .option("url", jdbc_url)
+        .option("dbtable", target)
+        .option("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+        .option("accessToken", access_token)  # Entra ID service-principal auth
+        .option("batchsize", "10000")  # rows per insert batch (tune for throughput)
+        .save()
+    )
+    return row_count
+
+
+results = []
+for t in TABLES:
+    n = sync_table(t["source"], t["target"], t.get("where"))
+    results.append((t["source"], t["target"], n))
+
+print("\nSync complete:")
+for source, target, n in results:
+    print(f"  {source} -> {target}: {n:,} rows")
