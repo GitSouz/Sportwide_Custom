@@ -23,7 +23,10 @@ filter; connection and auth are shared across all of them.
 
 | Source (under `catalog`) | Target | Filter |
 |---|---|---|
-| `global.vwfacttransaction` | `dbo.FactTransaction` | `ProviderCode = 'STXWBK'` and `year(OrderDate) >= year(current_date) - 1` |
+| `global.dim_customer` | `Insights.CustomerStage_OrgsId_3` | `ProviderCode = 'STXWBK'` and not excluded |
+| `global.dim_product_band` | `Insights.ProductBandStage_OrgsId_3` | not excluded |
+| `global.dim_product_bridge` | `Insights.ProductStage_OrgsId_3` | classified, not excluded, real product types |
+| `global.vwfacttransaction` | `Insights.TransactionStage_OrgsId_3` | `ProviderCode = 'STXWBK'` and `year(OrderDate) >= year(current_date) - 1` |
 
 ## 1. Service principal & secret
 
@@ -95,12 +98,21 @@ notification. That's the whole pipeline.
 Add one entry to the `TABLES` list at the top of the notebook:
 
 ```python
-{"source": "global.<view>", "target": "dbo.<Table>", "where": "<optional predicate or None>"},
+{
+    "source": "global.<view>",
+    "target": "Insights.<Table>",
+    "where": "<optional predicate or None>",
+    "columns": ["Col1", "Col2"],   # optional; omit or None = SELECT *
+},
 ```
 
 - `source` is resolved under the `catalog` widget (`esxccc`).
 - `where` is an optional **Spark SQL** predicate (use `current_date()`, not
-  `GETDATE()`); set it to `None` to copy the whole table.
+  `GETDATE()`; use bare/backtick identifiers, not `[brackets]`); `None` = no
+  filter.
+- `columns` is an optional whitelist — list only the columns you want, or omit
+  for all. Handy to keep the target narrow or to drop an unwanted complex
+  column.
 - The SP needs write access to each new target (the `db_datawriter` /
   `db_ddladmin` grant already covers the whole database).
 
@@ -116,6 +128,11 @@ through the Azure SQL **server firewall**, otherwise the connection is refused.
   and grants. With `truncate=true` it keeps the table and just replaces rows.
 - **Not atomic.** During truncate+reload the table is briefly empty; readers can
   see a partial table mid-load. If that matters, load a staging table and swap.
+- **Complex columns → JSON.** SQL Server has no array/map/struct type, so a
+  `SELECT *` over a source with such a column fails with *"Can't get JDBC type
+  for array<...>"*. The notebook's `jdbc_safe()` step auto-serializes any
+  complex column to a JSON string (lands as `nvarchar`). To drop it instead, use
+  the per-table `columns` whitelist.
 - **First run infers the schema.** For production-grade column types and
   indexes, pre-create `dbo.FactTransaction` as a `db/migrations/V<n>__...sql`
   migration (define the columns to match the view) so the table shape is
