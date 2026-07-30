@@ -11,30 +11,43 @@ Sportwide Azure SQL database (the same database whose schema is versioned under
 | **Target** | `dbo.FactTransaction` in Azure SQL |
 | **Load type** | Full overwrite — `TRUNCATE` + reload every run |
 | **Engine** | Spark SQL Server connector (`com.microsoft.sqlserver.jdbc.spark`, bulk insert) |
+| **Auth** | Entra ID (Azure AD) **service principal** — access token, no SQL login |
 | **Schedule** | Databricks Job / Workflow, daily trigger |
 
 Notebook: [`fact_transaction_to_azure_sql.py`](fact_transaction_to_azure_sql.py)
 (a Databricks notebook stored as source).
 
-## 1. Secrets (never hard-code the SQL login)
+## 1. Service principal & secret
 
-Store the Azure SQL credentials in a Databricks **secret scope** backed by Azure
-Key Vault, then reference them from the job — this matches how the rest of the
-repo treats Azure SQL credentials (env / Key Vault, nothing committed).
+Auth is via an Entra ID (Azure AD) **service principal**. You need three things:
+`tenant_id`, `client_id`, and a **client secret** — `tenant_id` + `client_id`
+alone cannot authenticate. Store only the client secret in a Databricks **secret
+scope** (ideally Key Vault-backed); the tenant/client IDs are non-secret job
+parameters.
 
 ```bash
-# One-time: create a Key Vault-backed scope in the Databricks UI, or a
-# Databricks-managed scope via the CLI:
 databricks secrets create-scope kv-scope
-databricks secrets put-secret kv-scope sql-user
-databricks secrets put-secret kv-scope sql-password
+databricks secrets put-secret kv-scope sp-client-secret   # the SP client secret
 ```
 
-## 2. Cluster library
+The service principal must also exist as a user **inside the Azure SQL
+database** with rights to truncate/insert into the target table. Connect once as
+an Entra admin and run:
 
-The write uses the Spark SQL Server connector. Install the matching Maven
-coordinate on the job cluster (pick the artifact for your Spark/Scala version),
-e.g. `com.microsoft.azure:spark-mssql-connector_2.12:1.4.0`.
+```sql
+-- <sp-display-name> is the app registration's name in Entra
+CREATE USER [<sp-display-name>] FROM EXTERNAL PROVIDER;
+ALTER ROLE db_datawriter ADD MEMBER [<sp-display-name>];
+ALTER ROLE db_ddladmin  ADD MEMBER [<sp-display-name>];  -- needed for TRUNCATE / first-run table create
+```
+
+## 2. Cluster libraries
+
+Install on the job cluster:
+
+- **Spark SQL Server connector** (Maven) — match your Spark/Scala version, e.g.
+  `com.microsoft.azure:spark-mssql-connector_2.12:1.4.0`.
+- **`azure-identity`** (PyPI) — used to acquire the Entra access token.
 
 ## 3. Create the job
 
@@ -48,9 +61,10 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 | `sql_server` | `<server>.database.windows.net` |
 | `sql_database` | `<db>` |
 | `target_table` | `dbo.FactTransaction` |
+| `tenant_id` | `<entra-tenant-id>` |
+| `client_id` | `<service-principal-client-id>` |
 | `secret_scope` | `kv-scope` |
-| `secret_user_key` | `sql-user` |
-| `secret_password_key` | `sql-password` |
+| `secret_client_secret_key` | `sp-client-secret` |
 
 Add a **daily schedule** (off-peak hour), enable **retries**, and set a failure
 notification. That's the whole pipeline.
