@@ -32,8 +32,8 @@ dbutils.widgets.text("catalog", "esxccc", "Source Unity Catalog")
 dbutils.widgets.text("source_table", "global.vwfacttransaction", "Source schema.table")
 dbutils.widgets.text("provider_code", "STXWBK", "ProviderCode filter")
 
-dbutils.widgets.text("sql_server", "", "Azure SQL server (<name>.database.windows.net)")
-dbutils.widgets.text("sql_database", "", "Azure SQL database")
+dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
+dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
 dbutils.widgets.text("target_table", "dbo.FactTransaction", "Target schema.table")
 
 # Entra ID service principal

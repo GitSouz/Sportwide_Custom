@@ -8,7 +8,7 @@ Sportwide Azure SQL database (the same database whose schema is versioned under
 |---|---|
 | **Source** | `esxccc.global.vwfacttransaction` |
 | **Filter** | `ProviderCode = 'STXWBK'` and `YEAR(OrderDate) >= YEAR(current_date) - 1` (current + previous order year) |
-| **Target** | `dbo.FactTransaction` in Azure SQL |
+| **Target** | `dbo.FactTransaction` in `Sportwide` on `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
 | **Load type** | Full overwrite — `TRUNCATE` + reload every run |
 | **Engine** | Spark SQL Server connector (`com.microsoft.sqlserver.jdbc.spark`, bulk insert) |
 | **Auth** | Entra ID (Azure AD) **service principal** — access token, no SQL login |
@@ -66,8 +66,8 @@ Point a Databricks Job at the notebook and pass these parameters (widgets):
 | `catalog` | `esxccc` |
 | `source_table` | `global.vwfacttransaction` |
 | `provider_code` | `STXWBK` |
-| `sql_server` | `<server>.database.windows.net` |
-| `sql_database` | `<db>` |
+| `sql_server` | `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
+| `sql_database` | `Sportwide` |
 | `target_table` | `dbo.FactTransaction` |
 | `tenant_id` | `<entra-tenant-id>` |
 | `client_id` | `<service-principal-client-id>` |
