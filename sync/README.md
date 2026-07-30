@@ -21,6 +21,11 @@ The tables to sync are defined in the `TABLES` list at the top of the notebook.
 **Adding a table is one entry** — `source`, `target`, and an optional `where`
 filter; connection and auth are shared across all of them.
 
+The **source catalog is appended to the target table name** at runtime (schema
+kept): with `catalog = esxccc`, a `target` of `Insights.CustomerStage_OrgsId_3`
+is written to `Insights.CustomerStage_OrgsId_3_esxccc`. Keep the `target` values
+below catalog-free — the suffix is added by `qualify_target()`.
+
 | Source (under `catalog`) | Target | Filter |
 |---|---|---|
 | `global.dim_customer` | `Insights.CustomerStage_OrgsId_3` | `ProviderCode = 'STXWBK'` and not excluded |
