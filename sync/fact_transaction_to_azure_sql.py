@@ -157,6 +157,17 @@ def jdbc_safe(df):
     return df.select(*projected)
 
 
+def qualify_target(target: str, catalog: str) -> str:
+    """Append the source catalog as a suffix on the target *table* name, keeping
+    the schema prefix. e.g. "Insights.CustomerStage_OrgsId_3" + "esxccc"
+    -> "Insights.CustomerStage_OrgsId_3_esxccc".
+    """
+    if "." in target:
+        schema, tbl = target.split(".", 1)
+        return f"{schema}.{tbl}_{catalog}"
+    return f"{target}_{catalog}"
+
+
 def sync_table(source, target, where=None, columns=None) -> int:
     select_list = ", ".join(columns) if columns else "*"
     query = f"SELECT {select_list} FROM {source}"
@@ -183,8 +194,9 @@ def sync_table(source, target, where=None, columns=None) -> int:
 
 results = []
 for t in TABLES:
-    n = sync_table(t["source"], t["target"], t.get("where"), t.get("columns"))
-    results.append((t["source"], t["target"], n))
+    target = qualify_target(t["target"], catalog)
+    n = sync_table(t["source"], target, t.get("where"), t.get("columns"))
+    results.append((t["source"], target, n))
 
 print("\nSync complete:")
 for source, target, n in results:
