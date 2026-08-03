@@ -26,12 +26,15 @@ kept): with `catalog = esxccc`, a `target` of `Insights.CustomerStage` is writte
 to `Insights.CustomerStage_esxccc`. Keep the `target` values below catalog-free —
 the suffix is added by `qualify_target()`.
 
+Every table selects an explicit `columns` list that includes
+`current_date() as LoadDate`, so each row carries the run date.
+
 | Source (under `catalog`) | Target (before catalog suffix) | Filter |
 |---|---|---|
-| `global.dim_customer` | `Insights.CustomerStage` | `ProviderCode = 'STXWBK'` and not excluded (selected columns only) |
+| `global.dim_customer` | `Insights.CustomerStage` | not excluded |
 | `global.dim_product_band` | `Insights.ProductBandStage` | not excluded |
-| `global.dim_product_bridge` | `Insights.ProductStage` | not excluded, real product types |
-| `global.vwfacttransaction` | `Insights.TransactionStage` | `ProviderCode = 'STXWBK'` |
+| `global.dim_product` | `Insights.ProductStage` | classified, not excluded, real product types |
+| `global.vwfacttransaction` | `Insights.TransactionStage` | `YEAR(OrderDate) >= YEAR(current_date) - 1` (current + previous order year) |
 
 ## 1. Service principal & secret
 
@@ -133,6 +136,9 @@ through the Azure SQL **server firewall**, otherwise the connection is refused.
   and grants. With `truncate=true` it keeps the table and just replaces rows.
 - **Not atomic.** During truncate+reload the table is briefly empty; readers can
   see a partial table mid-load. If that matters, load a staging table and swap.
+- **Load date.** Each table's `columns` list includes
+  `current_date() as LoadDate`, so every row records the run date (lands as a
+  SQL Server `date`). Drop it from a table's `columns` to omit it there.
 - **Complex columns → JSON.** SQL Server has no array/map/struct type, so a
   `SELECT *` over a source with such a column fails with *"Can't get JDBC type
   for array<...>"*. The notebook's `jdbc_safe()` step auto-serializes any

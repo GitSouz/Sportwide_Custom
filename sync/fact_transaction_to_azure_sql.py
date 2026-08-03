@@ -30,7 +30,8 @@
 # MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter).
 # MAGIC - `columns` — optional list of columns to select (omit or `None` = all,
 # MAGIC   i.e. `SELECT *`). Use this to load only the columns you need, or to skip
-# MAGIC   an unwanted complex column entirely.
+# MAGIC   an unwanted complex column entirely. `current_date() as LoadDate` adds the
+# MAGIC   run date to every row.
 
 # COMMAND ----------
 
@@ -38,27 +39,31 @@ TABLES = [
     {
         "source": "global.dim_customer",
         "target": "Insights.CustomerStage",
-        "where": "ProviderCode = 'STXWBK' AND coalesce(ExclusionFilter, false) <> true",
-        "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","'3' as OrgsId"],  # optional
+        "where": "coalesce(ExclusionFilter, false) <> true",
+        "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","current_date() as LoadDate"],
     },
     {
         "source": "global.dim_product_band",
         "target": "Insights.ProductBandStage",
         "where": "coalesce(ExclusionFilter, false) <> true",
+        "columns": ["ProductBandSID","ProductBandID","ProductBand","ProductType","current_date() as LoadDate"],
     },
     {
-        "source": "global.dim_product_bridge",
+        "source": "global.dim_product",
         "target": "Insights.ProductStage",
         "where": (
-            "coalesce(ExclusionFilter, false) <> true "
+            "coalesce(ClassificationStatus, '') = 'Classified' "
+            "AND coalesce(ExclusionFilter, false) <> true "
             "AND ProductType NOT LIKE 'Infer From%' "
             "AND ProductType != 'All Products'"
         ),
+        "columns": ["ProductID","ProductName","ProductDate","EventFormat","Competition","Opposition","ProductType","current_date() as LoadDate"],
     },
     {
         "source": "global.vwfacttransaction",
         "target": "Insights.TransactionStage",
-        "where": "ProviderCode = 'STXWBK'",
+        "where": "YEAR(OrderDate) >= YEAR(current_date) - 1",
+        "columns": ["TransactionID","OrderID","ProductDate","ProductSID","OrderDate","OrderTime","PurchaserID","TransactionType","Area","SubArea","Block","Row","Seat","ProductBandSID","AdjustedGrossRevenue","AdjustedNetRevenue","AdjustedQuantity","SourceCurrency","current_date() as LoadDate"],
     },
 ]
 
@@ -158,8 +163,8 @@ def jdbc_safe(df):
 
 def qualify_target(target: str, catalog: str) -> str:
     """Append the source catalog as a suffix on the target *table* name, keeping
-    the schema prefix. e.g. "Insights.CustomerStage_OrgsId_3" + "esxccc"
-    -> "Insights.CustomerStage_OrgsId_3_esxccc".
+    the schema prefix. e.g. "Insights.CustomerStage" + "esxccc"
+    -> "Insights.CustomerStage_esxccc".
     """
     if "." in target:
         schema, tbl = target.split(".", 1)
