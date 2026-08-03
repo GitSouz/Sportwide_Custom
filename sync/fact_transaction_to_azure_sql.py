@@ -27,12 +27,11 @@
 # MAGIC ## Tables to sync
 # MAGIC One entry per table:
 # MAGIC - `source` / `target` — schema.table names (source resolved under `catalog`).
-# MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter). Use
-# MAGIC   the `{provider_code}` placeholder to inject the `provider_code` widget
-# MAGIC   value instead of hard-coding it.
+# MAGIC - `where` — optional Spark-SQL predicate (omit or `None` = no filter).
 # MAGIC - `columns` — optional list of columns to select (omit or `None` = all,
 # MAGIC   i.e. `SELECT *`). Use this to load only the columns you need, or to skip
-# MAGIC   an unwanted complex column entirely.
+# MAGIC   an unwanted complex column entirely. `current_date() as LoadDate` adds the
+# MAGIC   run date to every row.
 
 # COMMAND ----------
 
@@ -40,27 +39,31 @@ TABLES = [
     {
         "source": "global.dim_customer",
         "target": "Insights.CustomerStage",
-        "where": "ProviderCode = '{provider_code}' AND coalesce(ExclusionFilter, false) <> true",
-        "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","'3' as OrgsId"],  # optional
+        "where": "coalesce(ExclusionFilter, false) <> true",
+        "columns": ["CustomerID","DateofBirth","Address1","Address2","Address3","Address4","PostCode","City","Title","Gender","FirstName","LastName","Telephone","MobilePhone","EmailAddress","CreatedDate","current_date() as LoadDate"],
     },
     {
         "source": "global.dim_product_band",
         "target": "Insights.ProductBandStage",
         "where": "coalesce(ExclusionFilter, false) <> true",
+        "columns": ["ProductBandSID","ProductBandID","ProductBand","ProductType","current_date() as LoadDate"],
     },
     {
-        "source": "global.dim_product_bridge",
+        "source": "global.dim_product",
         "target": "Insights.ProductStage",
         "where": (
-            "coalesce(ExclusionFilter, false) <> true "
+            "coalesce(ClassificationStatus, '') = 'Classified' "
+            "AND coalesce(ExclusionFilter, false) <> true "
             "AND ProductType NOT LIKE 'Infer From%' "
             "AND ProductType != 'All Products'"
         ),
+        "columns": ["ProductID","ProductName","ProductDate","EventFormat","Competition","Opposition","ProductType","current_date() as LoadDate"],
     },
     {
         "source": "global.vwfacttransaction",
         "target": "Insights.TransactionStage",
-        "where": "ProviderCode = '{provider_code}'",
+        "where": "YEAR(OrderDate) >= YEAR(current_date) - 1",
+        "columns": ["TransactionID","OrderID","ProductDate","ProductSID","OrderDate","OrderTime","PurchaserID","TransactionType","Area","SubArea","Block","Row","Seat","ProductBandSID","AdjustedGrossRevenue","AdjustedNetRevenue","AdjustedQuantity","SourceCurrency","current_date() as LoadDate"],
     },
 ]
 
@@ -75,8 +78,6 @@ TABLES = [
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "esxccc", "Source Unity Catalog")
-dbutils.widgets.text("provider_code", "STXWBK", "ProviderCode filter ({provider_code} in WHERE)")
-dbutils.widgets.text("load_timestamp_column", "LoadedAtUtc", "Load-timestamp column (blank = off)")
 
 dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
 dbutils.widgets.text("sql_database", "Sportwide", "Azure SQL database")
@@ -88,8 +89,6 @@ dbutils.widgets.text("secret_scope", "key-vault", "Databricks secret scope (back
 dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
 catalog = dbutils.widgets.get("catalog")
-provider_code = dbutils.widgets.get("provider_code")
-load_timestamp_column = dbutils.widgets.get("load_timestamp_column").strip()
 
 sql_server = dbutils.widgets.get("sql_server")
 sql_database = dbutils.widgets.get("sql_database")
@@ -142,7 +141,7 @@ jdbc_url = (
 
 # COMMAND ----------
 
-from pyspark.sql.functions import col, current_timestamp, to_json
+from pyspark.sql.functions import col, to_json
 from pyspark.sql.types import ArrayType, MapType, StructType
 
 spark.sql(f"USE CATALOG {catalog}")
@@ -164,8 +163,8 @@ def jdbc_safe(df):
 
 def qualify_target(target: str, catalog: str) -> str:
     """Append the source catalog as a suffix on the target *table* name, keeping
-    the schema prefix. e.g. "Insights.CustomerStage_OrgsId_3" + "esxccc"
-    -> "Insights.CustomerStage_OrgsId_3_esxccc".
+    the schema prefix. e.g. "Insights.CustomerStage" + "esxccc"
+    -> "Insights.CustomerStage_esxccc".
     """
     if "." in target:
         schema, tbl = target.split(".", 1)
@@ -179,10 +178,6 @@ def sync_table(source, target, where=None, columns=None) -> int:
     if where:
         query += f" WHERE {where}"
     df = jdbc_safe(spark.sql(query))
-
-    # Stamp each row with the sync run time (lands as a SQL Server datetime2).
-    if load_timestamp_column:
-        df = df.withColumn(load_timestamp_column, current_timestamp())
 
     row_count = df.count()
     print(f"{source} -> {sql_database}.{target}: {row_count:,} rows")
@@ -203,11 +198,8 @@ def sync_table(source, target, where=None, columns=None) -> int:
 
 results = []
 for t in TABLES:
-    where = t.get("where")
-    if where:
-        where = where.replace("{provider_code}", provider_code)
     target = qualify_target(t["target"], catalog)
-    n = sync_table(t["source"], target, where, t.get("columns"))
+    n = sync_table(t["source"], target, t.get("where"), t.get("columns"))
     results.append((t["source"], target, n))
 
 print("\nSync complete:")
