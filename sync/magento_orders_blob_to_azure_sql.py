@@ -47,7 +47,7 @@ dbutils.widgets.text("load_date", "", "Date partition YYYYMMDD (blank = yesterda
 dbutils.widgets.dropdown("multiline_json", "false", ["false", "true"], "multiLine JSON (one object spanning lines)")
 
 # Storage auth: connection string (holds the account key) from Key Vault.
-dbutils.widgets.text("storage_secret_scope", "tcakvuksdatamgmtprod01", "Secret scope for the storage connection string")
+dbutils.widgets.text("storage_secret_scope", "key-vault", "Secret scope for the storage connection string")
 dbutils.widgets.text("storage_secret_key", "prod-blob-connection-string", "Secret key: storage connection string")
 
 # Target (Azure SQL)

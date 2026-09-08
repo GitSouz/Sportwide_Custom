@@ -168,7 +168,7 @@ landing zone into the `AELTC` Azure SQL database.
 | **Source** | `abfss://raw@tcadluksdatamgmtprod01.dfs.core.windows.net/LANDING/AELTC/MAGENTO/MAGENTO_DATA/CART/_date=<YYYYMMDD>/` (recurses all `_time=*` folders) |
 | **Target DB** | `Insights.MagentoOrdersStage` in `AELTC` on `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
 | **Load type** | Full overwrite — `TRUNCATE` + reload with the selected day's data |
-| **Storage auth** | Account key from a Key Vault connection string (`tcakvuksdatamgmtprod01` / `prod-blob-connection-string`), set as `fs.azure.account.key.<account>...` |
+| **Storage auth** | Account key from a Key Vault connection string (scope `key-vault`, secret `prod-blob-connection-string`), set as `fs.azure.account.key.<account>...` |
 | **Azure SQL auth** | Same Entra ID service principal (access token) |
 
 Notebook:
@@ -189,10 +189,10 @@ Notebook:
 - **Provenance.** Each row gets `SourceDate` (the partition date) and `LoadDate`
   (the run date).
 - **Storage auth.** The account key is parsed from the Key Vault connection
-  string (`storage_secret_scope` / `storage_secret_key`, default vault
-  `tcakvuksdatamgmtprod01`, secret `prod-blob-connection-string`) and set as
+  string (`storage_secret_scope` / `storage_secret_key`, default scope
+  `key-vault`, secret `prod-blob-connection-string`) and set as
   `fs.azure.account.key.<account>.dfs.core.windows.net` before any read. The
-  scope must be a Databricks secret scope backed by that Key Vault.
+  scope is the same Databricks secret scope used for the SP client secret.
 - **No data yet.** If the day's partition doesn't exist, the notebook lists the
   `_date=*` partitions that do exist under `base_path`, then exits cleanly
   (`No data ...`) rather than failing — safe for an early-morning run.
