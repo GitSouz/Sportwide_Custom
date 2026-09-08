@@ -142,10 +142,27 @@ def jdbc_safe(df):
     return df.select(*projected)
 
 
-# Bail out cleanly if today's partition hasn't landed yet.
-try:
-    dbutils.fs.ls(source_path)
-except Exception:
+def path_exists(p):
+    try:
+        dbutils.fs.ls(p)
+        return True
+    except Exception:
+        return False
+
+
+# Bail out cleanly if the day's partition hasn't landed yet -- but first list the
+# _date=* partitions that DO exist under base_path, so a "no data" run shows the
+# real layout (wrong date, casing, or naming) instead of failing silently.
+if not path_exists(source_path):
+    base_uri = f"abfss://{container}@{storage_account}.dfs.core.windows.net/{base_path}/"
+    print(f"No data at {source_path}")
+    try:
+        available = sorted(f.name.rstrip("/") for f in dbutils.fs.ls(base_uri))
+        print(f"Partitions found under {base_uri} ({len(available)}):")
+        for name in available:
+            print("  ", name)
+    except Exception as e:
+        print(f"Could not list {base_uri}: {e}")
     dbutils.notebook.exit(f"No data at {source_path} - nothing to load.")
 
 reader = spark.read.option("recursiveFileLookup", "true")
