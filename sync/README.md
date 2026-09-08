@@ -178,7 +178,8 @@ Notebook:
 
 - **Which day.** `load_date` defaults to **yesterday** (UTC, `YYYYMMDD`) and
   forms the `_date=` partition — so a daily morning run picks up the previous
-  day's completed data. Override the widget to backfill a specific day.
+  day's completed data. Hard-code a `YYYYMMDD` in `load_date` to backfill a
+  specific day.
 - **Recursion.** `recursiveFileLookup=true` reads every file under the day's
   folder, so all `_time=HHMMSS` subfolders are picked up automatically.
 - **JSON shape.** `multiline_json=false` (default) treats each file as JSON
@@ -215,7 +216,7 @@ Notebook:
 
 ## Adjusting / other feeds
 
-The notebook is single-source, driven by widgets. To load a different feed
+The notebook is single-source, driven by the config values at the top. To load a different feed
 (e.g. `.../MAGENTO/DEFAULT/INVOICES`), point `base_path` and `target_table` at
 it — or clone the notebook per feed. Auth and the write logic are unchanged.
 The default write is a **full overwrite** with the selected day only; switch

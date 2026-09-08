@@ -64,54 +64,36 @@ COLUMNS = [
 
 # MAGIC %md
 # MAGIC ## Parameters
-# MAGIC Non-secret values come from job parameters (widgets). The service
-# MAGIC principal's **client secret** lives in a Databricks secret scope backed by
+# MAGIC Plain config values. The service principal's **client secret** and the
+# MAGIC storage connection string are read from a Databricks secret scope backed by
 # MAGIC Azure Key Vault. Nothing secret is hard-coded.
 
 # COMMAND ----------
 
-# Source (ADLS Gen2 landing zone)
-dbutils.widgets.text("storage_account", "tcadluksdatamgmtprod01", "ADLS storage account")
-dbutils.widgets.text("container", "raw", "ADLS container")
-dbutils.widgets.text("base_path", "LANDING/AELTC/MAGENTO/MAGENTO_DATA/CART", "Path above the _date partitions")
-dbutils.widgets.text("load_date", "", "Date partition YYYYMMDD (blank = yesterday, UTC)")
-dbutils.widgets.dropdown("multiline_json", "false", ["false", "true"], "multiLine JSON (one object spanning lines)")
-
-# Storage auth: connection string (holds the account key) from Key Vault.
-dbutils.widgets.text("storage_secret_scope", "key-vault", "Secret scope for the storage connection string")
-dbutils.widgets.text("storage_secret_key", "prod-blob-connection-string", "Secret key: storage connection string")
-
-# Target (Azure SQL)
-dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
-dbutils.widgets.text("sql_database", "AELTC", "Azure SQL database")
-dbutils.widgets.text("target_table", "Insights.MagentoOrdersStage", "Target schema.table")
-
-# Entra ID service principal (Azure SQL auth)
-dbutils.widgets.text("tenant_id", "afa21132-558b-4712-9dd1-72dbaf33febb", "Entra tenant_id")
-dbutils.widgets.text("client_id", "e5a7dd31-c5b9-4fea-a286-7ee303c36985", "Service principal client_id")
-dbutils.widgets.text("secret_scope", "key-vault", "Databricks secret scope (backed by Key Vault)")
-dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
-
 from datetime import datetime, timedelta, timezone
 
-storage_account = dbutils.widgets.get("storage_account")
-container = dbutils.widgets.get("container")
-base_path = dbutils.widgets.get("base_path").strip("/")
-yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")
-load_date = dbutils.widgets.get("load_date").strip() or yesterday
-multiline_json = dbutils.widgets.get("multiline_json") == "true"
+# Source (ADLS Gen2 landing zone)
+storage_account = "tcadluksdatamgmtprod01"
+container = "raw"
+base_path = "LANDING/AELTC/MAGENTO/MAGENTO_DATA/CART".strip("/")
+load_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")  # yesterday (UTC); hard-code a YYYYMMDD to backfill
+multiline_json = False  # True if each file is a single object/array spanning lines
 
-storage_secret_scope = dbutils.widgets.get("storage_secret_scope")
-storage_secret_key = dbutils.widgets.get("storage_secret_key")
+# Storage auth: connection string (holds the account key) from Key Vault.
+storage_secret_scope = "key-vault"
+storage_secret_key = "prod-blob-connection-string"
 
-sql_server = dbutils.widgets.get("sql_server")
-sql_database = dbutils.widgets.get("sql_database")
-target_table = dbutils.widgets.get("target_table")
+# Target (Azure SQL)
+sql_server = "tcsqlsrvuksdatamgmtprod02.database.windows.net"
+sql_database = "AELTC"
+target_table = "Insights.MagentoOrdersStage"
 
-tenant_id = dbutils.widgets.get("tenant_id")
-client_id = dbutils.widgets.get("client_id")
-secret_scope = dbutils.widgets.get("secret_scope")
-client_secret = dbutils.secrets.get(secret_scope, dbutils.widgets.get("secret_client_secret_key"))
+# Entra ID service principal (Azure SQL auth)
+tenant_id = "afa21132-558b-4712-9dd1-72dbaf33febb"
+client_id = "e5a7dd31-c5b9-4fea-a286-7ee303c36985"
+secret_scope = "key-vault"
+secret_client_secret_key = "datamgmt-sp-key"
+client_secret = dbutils.secrets.get(secret_scope, secret_client_secret_key)
 
 assert sql_server, "sql_server parameter is required"
 assert sql_database, "sql_database parameter is required"
