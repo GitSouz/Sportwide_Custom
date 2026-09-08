@@ -176,8 +176,9 @@ Notebook:
 
 ## How it works
 
-- **Which day.** `load_date` defaults to today (UTC, `YYYYMMDD`) and forms the
-  `_date=` partition. Override the widget to backfill a specific day.
+- **Which day.** `load_date` defaults to **yesterday** (UTC, `YYYYMMDD`) and
+  forms the `_date=` partition — so a daily morning run picks up the previous
+  day's completed data. Override the widget to backfill a specific day.
 - **Recursion.** `recursiveFileLookup=true` reads every file under the day's
   folder, so all `_time=HHMMSS` subfolders are picked up automatically.
 - **JSON shape.** `multiline_json=false` (default) treats each file as JSON

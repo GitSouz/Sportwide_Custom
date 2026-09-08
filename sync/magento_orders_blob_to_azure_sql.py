@@ -42,7 +42,7 @@
 dbutils.widgets.text("storage_account", "tcadluksdatamgmtdev01", "ADLS storage account")
 dbutils.widgets.text("container", "raw", "ADLS container")
 dbutils.widgets.text("base_path", "LANDING/DEVCL1/MAGENTO/DEFAULT/ORDERS", "Path above the _date partitions")
-dbutils.widgets.text("load_date", "", "Date partition YYYYMMDD (blank = today, UTC)")
+dbutils.widgets.text("load_date", "", "Date partition YYYYMMDD (blank = yesterday, UTC)")
 dbutils.widgets.dropdown("multiline_json", "false", ["false", "true"], "multiLine JSON (one object spanning lines)")
 
 # Target (Azure SQL)
@@ -56,12 +56,13 @@ dbutils.widgets.text("client_id", "e5a7dd31-c5b9-4fea-a286-7ee303c36985", "Servi
 dbutils.widgets.text("secret_scope", "key-vault", "Databricks secret scope (backed by Key Vault)")
 dbutils.widgets.text("secret_client_secret_key", "datamgmt-sp-key", "Secret key: SP client secret (Key Vault secret name)")
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 storage_account = dbutils.widgets.get("storage_account")
 container = dbutils.widgets.get("container")
 base_path = dbutils.widgets.get("base_path").strip("/")
-load_date = dbutils.widgets.get("load_date").strip() or datetime.now(timezone.utc).strftime("%Y%m%d")
+yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")
+load_date = dbutils.widgets.get("load_date").strip() or yesterday
 multiline_json = dbutils.widgets.get("multiline_json") == "true"
 
 sql_server = dbutils.widgets.get("sql_server")
