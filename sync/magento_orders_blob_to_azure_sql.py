@@ -14,8 +14,9 @@
 # MAGIC The notebook reads `_date=<run date>` and **recurses into every `_time=*`
 # MAGIC folder below it** (`recursiveFileLookup=true`).
 # MAGIC
-# MAGIC **Storage auth:** already configured (Unity Catalog external location /
-# MAGIC mount), so the `abfss://` path is read directly — no credentials set here.
+# MAGIC **Storage auth:** the account key is taken from a connection string held in
+# MAGIC Key Vault (`storage_secret_scope` / `storage_secret_key`) and set as
+# MAGIC `fs.azure.account.key.<account>...` before any `abfss://` access.
 # MAGIC
 # MAGIC **Azure SQL auth:** Entra ID (Azure AD) service principal — an access token
 # MAGIC from `tenant_id` + `client_id` + client secret (no SQL username/password).
@@ -39,11 +40,15 @@
 # COMMAND ----------
 
 # Source (ADLS Gen2 landing zone)
-dbutils.widgets.text("storage_account", "tcadluksdatamgmtdev01", "ADLS storage account")
+dbutils.widgets.text("storage_account", "tcadluksdatamgmtprod01", "ADLS storage account")
 dbutils.widgets.text("container", "raw", "ADLS container")
-dbutils.widgets.text("base_path", "LANDING/DEVCL1/MAGENTO/DEFAULT/ORDERS", "Path above the _date partitions")
+dbutils.widgets.text("base_path", "LANDING/AELTC/MAGENTO/MAGENTO_DATA/CART", "Path above the _date partitions")
 dbutils.widgets.text("load_date", "", "Date partition YYYYMMDD (blank = yesterday, UTC)")
 dbutils.widgets.dropdown("multiline_json", "false", ["false", "true"], "multiLine JSON (one object spanning lines)")
+
+# Storage auth: connection string (holds the account key) from Key Vault.
+dbutils.widgets.text("storage_secret_scope", "tcakvuksdatamgmtprod01", "Secret scope for the storage connection string")
+dbutils.widgets.text("storage_secret_key", "prod-blob-connection-string", "Secret key: storage connection string")
 
 # Target (Azure SQL)
 dbutils.widgets.text("sql_server", "tcsqlsrvuksdatamgmtprod02.database.windows.net", "Azure SQL server")
@@ -65,6 +70,9 @@ yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")
 load_date = dbutils.widgets.get("load_date").strip() or yesterday
 multiline_json = dbutils.widgets.get("multiline_json") == "true"
 
+storage_secret_scope = dbutils.widgets.get("storage_secret_scope")
+storage_secret_key = dbutils.widgets.get("storage_secret_key")
+
 sql_server = dbutils.widgets.get("sql_server")
 sql_database = dbutils.widgets.get("sql_database")
 target_table = dbutils.widgets.get("target_table")
@@ -85,6 +93,35 @@ source_path = (
 )
 print(f"Source: {source_path}")
 print(f"Target: {sql_database}.{target_table}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configure storage access (account key from a connection string)
+# MAGIC The storage account isn't pre-configured on this cluster, so we read the
+# MAGIC connection string from Key Vault, pull the `AccountKey` out of it, and set
+# MAGIC `fs.azure.account.key.<account>.dfs.core.windows.net`. This must run before
+# MAGIC any read/list against `abfss://`.
+
+# COMMAND ----------
+
+
+def account_key_from_connection_string(conn_str: str) -> str:
+    # e.g. "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
+    # Split on ';' (the base64 key has no ';'); split each part on the FIRST '='
+    # so the key's own '=' padding is preserved.
+    parts = dict(p.split("=", 1) for p in conn_str.split(";") if "=" in p)
+    key = parts.get("AccountKey")
+    if not key:
+        raise ValueError("Connection string has no AccountKey.")
+    return key
+
+
+connection_string = dbutils.secrets.get(storage_secret_scope, storage_secret_key)
+spark.conf.set(
+    f"fs.azure.account.key.{storage_account}.dfs.core.windows.net",
+    account_key_from_connection_string(connection_string),
+)
 
 # COMMAND ----------
 
