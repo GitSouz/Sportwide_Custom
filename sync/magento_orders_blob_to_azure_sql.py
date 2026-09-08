@@ -57,7 +57,9 @@ COLUMNS = [
     "rec.is_virtual as is_virtual",
     "rec.items_count as items_count",
     "rec.items_qty as items_qty",
-    # add more fields here, e.g. "rec.customer_id as CustomerID",
+    "rec.customer.id as CustomerID",          # nested under customer
+    "rec.customer_is_guest as customer_is_guest",
+    # add more fields here, e.g. "rec.billing_address.postcode as PostCode",
 ]
 
 # COMMAND ----------
@@ -77,7 +79,7 @@ storage_account = "tcadluksdatamgmtprod01"
 container = "raw"
 base_path = "LANDING/AELTC/MAGENTO/MAGENTO_DATA/CART".strip("/")
 load_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y%m%d")  # yesterday (UTC); hard-code a YYYYMMDD to backfill
-multiline_json = False  # True if each file is a single object/array spanning lines
+multiline_json = True  # files are single pretty-printed JSON objects spanning lines
 
 # Storage auth: connection string (holds the account key) from Key Vault.
 storage_secret_scope = "key-vault"
