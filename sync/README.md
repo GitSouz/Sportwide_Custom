@@ -193,6 +193,15 @@ Notebook:
   `key-vault`, secret `prod-blob-connection-string`) and set as
   `fs.azure.account.key.<account>.dfs.core.windows.net` before any read. The
   scope is the same Databricks secret scope used for the SP client secret.
+- **Cluster type matters for storage.** Serverless / shared (Spark Connect)
+  clusters **block** runtime `fs.azure.*` config, so the account-key set is
+  best-effort there (fails with `CONFIG_NOT_AVAILABLE`, then continues). To read
+  the blob on those clusters, grant access via a **Unity Catalog external
+  location** over the container. On a **single-user (dedicated) cluster** the
+  runtime key set works as written; alternatively bake it into the cluster's
+  Spark config as `fs.azure.account.key.<account>...` =
+  `{{secrets/<scope>/<raw-account-key-secret>}}` (the raw key, not the
+  connection string).
 - **No data yet.** If the day's partition doesn't exist, the notebook lists the
   `_date=*` partitions that do exist under `base_path`, then exits cleanly
   (`No data ...`) rather than failing — safe for an early-morning run.

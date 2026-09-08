@@ -98,10 +98,19 @@ print(f"Target: {sql_database}.{target_table}")
 
 # MAGIC %md
 # MAGIC ## Configure storage access (account key from a connection string)
-# MAGIC The storage account isn't pre-configured on this cluster, so we read the
-# MAGIC connection string from Key Vault, pull the `AccountKey` out of it, and set
-# MAGIC `fs.azure.account.key.<account>.dfs.core.windows.net`. This must run before
-# MAGIC any read/list against `abfss://`.
+# MAGIC Read the connection string from Key Vault, pull the `AccountKey` out, and
+# MAGIC set `fs.azure.account.key.<account>.dfs.core.windows.net` before any
+# MAGIC `abfss://` access.
+# MAGIC
+# MAGIC **Serverless / shared (Spark Connect) clusters block runtime `fs.azure.*`
+# MAGIC config**, so the `spark.conf.set` below is best-effort. If it's rejected,
+# MAGIC the read still runs — relying on access granted another way. To make it
+# MAGIC work on this account, use one of:
+# MAGIC - a **single-user (dedicated) cluster** (runtime config allowed), or
+# MAGIC - a **Unity Catalog external location** over the container (no key needed), or
+# MAGIC - a **cluster Spark config**: `fs.azure.account.key.<account>.dfs.core.windows.net`
+# MAGIC   = `{{secrets/<scope>/<raw-account-key-secret>}}` (raw key, not the
+# MAGIC   connection string).
 
 # COMMAND ----------
 
@@ -117,11 +126,22 @@ def account_key_from_connection_string(conn_str: str) -> str:
     return key
 
 
-connection_string = dbutils.secrets.get(storage_secret_scope, storage_secret_key)
-spark.conf.set(
-    f"fs.azure.account.key.{storage_account}.dfs.core.windows.net",
-    account_key_from_connection_string(connection_string),
-)
+conf_key = f"fs.azure.account.key.{storage_account}.dfs.core.windows.net"
+try:
+    connection_string = dbutils.secrets.get(storage_secret_scope, storage_secret_key)
+    spark.conf.set(conf_key, account_key_from_connection_string(connection_string))
+    print(f"Set {conf_key} from connection string.")
+except Exception as e:
+    # Serverless/shared clusters reject runtime fs.azure.* config
+    # (CONFIG_NOT_AVAILABLE). Continue in case access is granted via a Unity
+    # Catalog external location; if not, the read below fails with a 403.
+    print(
+        f"Could not set {conf_key} at runtime: {e}\n"
+        "This is expected on serverless / shared (Spark Connect) clusters. "
+        "Use a single-user cluster, a UC external location, or a cluster Spark "
+        "config (see the cell notes). Continuing in case access is already "
+        "configured..."
+    )
 
 # COMMAND ----------
 
