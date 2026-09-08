@@ -155,3 +155,45 @@ through the Azure SQL **server firewall**, otherwise the connection is refused.
 - **Full reload cost.** This reloads all matching rows every day. If the
   filtered set grows large, switch the write step to incremental append (date
   watermark) or staging + `MERGE`.
+
+---
+
+# Load — Azure Blob (ADLS) JSON → Azure SQL (daily)
+
+A second notebook loads a day's Magento **order JSON** from the ADLS Gen2
+landing zone into the `AELTC` Azure SQL database.
+
+| | |
+|---|---|
+| **Source** | `abfss://raw@tcadluksdatamgmtdev01.dfs.core.windows.net/LANDING/DEVCL1/MAGENTO/DEFAULT/ORDERS/_date=<YYYYMMDD>/` (recurses all `_time=*` folders) |
+| **Target DB** | `Insights.MagentoOrdersStage` in `AELTC` on `tcsqlsrvuksdatamgmtprod02.database.windows.net` |
+| **Load type** | Full overwrite — `TRUNCATE` + reload with the selected day's data |
+| **Storage auth** | Already configured (Unity Catalog external location / mount) — the `abfss://` path is read directly |
+| **Azure SQL auth** | Same Entra ID service principal (access token) |
+
+Notebook:
+[`magento_orders_blob_to_azure_sql.py`](magento_orders_blob_to_azure_sql.py).
+
+## How it works
+
+- **Which day.** `load_date` defaults to today (UTC, `YYYYMMDD`) and forms the
+  `_date=` partition. Override the widget to backfill a specific day.
+- **Recursion.** `recursiveFileLookup=true` reads every file under the day's
+  folder, so all `_time=HHMMSS` subfolders are picked up automatically.
+- **JSON shape.** `multiline_json=false` (default) treats each file as JSON
+  Lines (one object per line). If a file is a single pretty-printed object/array
+  spanning lines, set it to `true`.
+- **Nested JSON.** Order JSON is deeply nested; `jdbc_safe()` serializes any
+  struct/array/map column to a JSON string so it lands as `nvarchar`.
+- **Provenance.** Each row gets `SourceDate` (the partition date) and `LoadDate`
+  (the run date).
+- **No data yet.** If the day's partition doesn't exist, the notebook exits
+  cleanly (`No data ...`) rather than failing — safe for an early-morning run.
+
+## Adjusting / other feeds
+
+The notebook is single-source, driven by widgets. To load a different feed
+(e.g. `.../MAGENTO/DEFAULT/INVOICES`), point `base_path` and `target_table` at
+it — or clone the notebook per feed. Auth and the write logic are unchanged.
+The default write is a **full overwrite** with the selected day only; switch
+`.mode("overwrite")` → `.mode("append")` (drop `truncate`) to accumulate days.
