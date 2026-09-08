@@ -184,6 +184,13 @@ Notebook:
 - **JSON shape.** `multiline_json=false` (default) treats each file as JSON
   Lines (one object per line). If a file is a single pretty-printed object/array
   spanning lines, set it to `true`.
+- **Field mapping.** Each file is an object with a top-level array of records
+  (`RECORDS_PATH`, default `items`). The notebook explodes that array to one row
+  per record (aliased `rec`), then selects `COLUMNS` — Spark-SQL expressions
+  `rec.<json field> as <SQL column>`, e.g. `cast(rec.created_at as timestamp) as
+  created_at`. Edit `COLUMNS` (near the top of the notebook) to map the fields
+  you want. `RECORDS_PATH = None` skips the explode; `COLUMNS = None` loads every
+  field unmapped.
 - **Nested JSON.** Order JSON is deeply nested; `jdbc_safe()` serializes any
   struct/array/map column to a JSON string so it lands as `nvarchar`.
 - **Provenance.** Each row gets `SourceDate` (the partition date) and `LoadDate`

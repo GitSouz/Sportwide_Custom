@@ -32,6 +32,37 @@
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Column mapping
+# MAGIC Each file is a JSON object with a top-level array (`RECORDS_PATH`) of one
+# MAGIC record per cart/order. We **explode** that array to one row per record
+# MAGIC (aliased `rec`), then select `COLUMNS` — Spark-SQL expressions of the form
+# MAGIC `rec.<json field> as <SQL column>`. Cast where you want a real type (e.g.
+# MAGIC `cast(rec.created_at as timestamp)`); anything still nested is serialized to
+# MAGIC a JSON string by `jdbc_safe()`.
+# MAGIC
+# MAGIC - Set `RECORDS_PATH = None` to keep the file's top-level rows as-is.
+# MAGIC - Set `COLUMNS = None` to load every field (no mapping).
+
+# COMMAND ----------
+
+# The top-level array to explode into one row per record (None = don't explode).
+RECORDS_PATH = "items"
+
+# Map JSON fields -> SQL columns. Reference the exploded record as `rec`.
+COLUMNS = [
+    "rec.id as CartID",
+    "cast(rec.created_at as timestamp) as created_at",
+    "cast(rec.updated_at as timestamp) as updated_at",
+    "rec.is_active as is_active",
+    "rec.is_virtual as is_virtual",
+    "rec.items_count as items_count",
+    "rec.items_qty as items_qty",
+    # add more fields here, e.g. "rec.customer_id as CustomerID",
+]
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Parameters
 # MAGIC Non-secret values come from job parameters (widgets). The service
 # MAGIC principal's **client secret** lives in a Databricks secret scope backed by
@@ -226,6 +257,15 @@ reader = spark.read.option("recursiveFileLookup", "true")
 if multiline_json:
     reader = reader.option("multiLine", "true")
 df = reader.json(source_path)
+
+# Explode the top-level array so there's one row per record (aliased `rec`).
+if RECORDS_PATH:
+    from pyspark.sql.functions import explode
+    df = df.select(explode(col(RECORDS_PATH)).alias("rec"))
+
+# Map JSON fields -> SQL columns (rec.<field> as <column>).
+if COLUMNS:
+    df = df.selectExpr(*COLUMNS)
 
 # Provenance columns: which partition this came from, and when it was loaded.
 df = df.withColumn("SourceDate", lit(load_date)).withColumn("LoadDate", current_date())
