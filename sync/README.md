@@ -221,3 +221,34 @@ The notebook is single-source, driven by the config values at the top. To load a
 it — or clone the notebook per feed. Auth and the write logic are unchanged.
 The default write is a **full overwrite** with the selected day only; switch
 `.mode("overwrite")` → `.mode("append")` (drop `truncate`) to accumulate days.
+
+---
+
+# Reformat — lake JSON → lake CSV (daily)
+
+A third notebook reads ClubSpark **bookings** JSON from the lake and writes a
+single header CSV back to the lake — a lake-to-lake reformat, no Azure SQL.
+
+| | |
+|---|---|
+| **Source** | `abfss://raw@tcadluksdatamgmtprod01.dfs.core.windows.net/<input_base_path>/` (recursive) |
+| **Output** | `.../NATIVE/ECBGLB/LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/BOOKINGS/YYYY/MM/DD/Bookings_YYYYMMDD.csv` |
+| **Format** | Single CSV file with header (coalesced) |
+| **Storage auth** | Same account key from the Key Vault connection string |
+
+Notebook:
+[`clubspark_bookings_json_to_csv.py`](clubspark_bookings_json_to_csv.py).
+
+## How it works
+
+- **Field mapping.** Same `RECORDS_PATH` + `COLUMNS` mapping as the Magento
+  loader. `COLUMNS = None` writes every field (nested values serialized to JSON
+  strings, since CSV is flat).
+- **Single file.** Spark writes a folder of part files, so the notebook
+  coalesces to one part and moves it to the final `Bookings_YYYYMMDD.csv`; any
+  existing file for the day is replaced.
+- **Date.** `run_dt` (today, UTC) drives both the `YYYY/MM/DD` output folders and
+  the file name. Hard-code a datetime to backfill.
+- **Open items.** Confirm the real **input path** (`input_base_path`) and the
+  ClubSpark JSON envelope, then set `RECORDS_PATH` / `COLUMNS` to the real
+  booking fields.
