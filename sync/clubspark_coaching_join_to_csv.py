@@ -18,14 +18,16 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Sources and join query
-# MAGIC - `SOURCES` — one entry per JSON dataset. Each is read from its
+# MAGIC ## Sources and outputs
+# MAGIC - `SOURCES` — every JSON dataset to read, once. Each is read from its
 # MAGIC   `_date=<load_date>/` folder and registered as a temp view named `view`.
 # MAGIC   `records_path` is only needed when records are wrapped in a top-level
 # MAGIC   array **field** (e.g. Magento's `items`). If the file's root is the array
 # MAGIC   itself (flat objects), leave `records_path = None` — with multiline JSON,
 # MAGIC   Spark reads each array element as a row directly.
-# MAGIC - `QUERY` — the Spark SQL that joins those views into the CSV output.
+# MAGIC - `OUTPUTS` — one entry per CSV to produce. Each has its own `query` (over
+# MAGIC   the views above) and its own destination folder. Add as many as you like;
+# MAGIC   the sources are read once and shared across all of them.
 # MAGIC
 # MAGIC TODO: set the real join keys / output columns once a sample of each feed is
 # MAGIC available.
@@ -45,23 +47,35 @@ SOURCES = [
     },
 ]
 
-# The SQL that builds the CSV. Reference the views above. Adjust the join key and
-# the selected columns to the real ClubSpark fields.
-QUERY = """
-SELECT
-    c.ID               AS CourseID,
-    c.Name             AS CourseName,
-    c.Code             AS CourseCode,
-    c.CoachingSchemeID AS CoachingSchemeID,
-    c.Cost             AS Cost,
-    c.MinimumAge       AS MinimumAge,
-    c.MaximumAge       AS MaximumAge,
-    -- TODO: real registrant columns/join key once a REGISTRANTS sample is shared
-    r.ID               AS RegistrantID
-FROM courses c
-JOIN registrants r
-    ON r.CourseID = c.ID   -- TODO: confirm the registrants -> courses key
-"""
+# One entry per CSV. `output_base_path` is the folder root (YYYY/MM/DD is appended);
+# the file is written as <output_name>_YYYYMMDD.csv. `query` runs over the views.
+OUTPUTS = [
+    {
+        "output_base_path": "NATIVE/ECBGLB/LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COACHING",
+        "output_name": "Coaching",
+        "query": """
+            SELECT
+                c.ID               AS CourseID,
+                c.Name             AS CourseName,
+                c.Code             AS CourseCode,
+                c.CoachingSchemeID AS CoachingSchemeID,
+                c.Cost             AS Cost,
+                c.MinimumAge       AS MinimumAge,
+                c.MaximumAge       AS MaximumAge,
+                -- TODO: real registrant columns/join key once a REGISTRANTS sample is shared
+                r.ID               AS RegistrantID
+            FROM courses c
+            JOIN registrants r
+                ON r.CourseID = c.ID   -- TODO: confirm the registrants -> courses key
+        """,
+    },
+    # Add more outputs here, each to a different folder, e.g.:
+    # {
+    #     "output_base_path": "NATIVE/ECBGLB/LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COURSES",
+    #     "output_name": "Courses",
+    #     "query": "SELECT * FROM courses",
+    # },
+]
 
 # COMMAND ----------
 
@@ -82,23 +96,15 @@ container = "raw"
 load_date = datetime.now(timezone.utc).strftime("%Y%m%d")  # today (UTC); hard-code YYYYMMDD to backfill
 multiline_json = True  # True if each file is a single object/array spanning lines
 
-# Output: date-partitioned CSV (YYYY/MM/DD folders). TODO: confirm output path.
-output_base_path = "NATIVE/ECBGLB/LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COACHING".strip("/")
-output_name = "Coaching"  # -> Coaching_YYYYMMDD.csv
-
 # Storage auth: connection string (holds the account key) from Key Vault.
 storage_secret_scope = "key-vault"
 storage_secret_key = "prod-blob-connection-string"
 
 run_dt = datetime.strptime(load_date, "%Y%m%d").replace(tzinfo=timezone.utc)
-output_dir = (
-    f"abfss://{container}@{storage_account}.dfs.core.windows.net/"
-    f"{output_base_path}/{run_dt.strftime('%Y/%m/%d')}"
-)
-output_file = f"{output_dir}/{output_name}_{load_date}.csv"
+date_folders = run_dt.strftime("%Y/%m/%d")  # YYYY/MM/DD for output paths
 
 print(f"Load date: {load_date}")
-print(f"Output:    {output_file}")
+print(f"Outputs:   {len(OUTPUTS)}")
 
 # COMMAND ----------
 
@@ -135,7 +141,7 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Read each source into a temp view, run the join, write one CSV
+# MAGIC ## Read each source into a temp view, then write each OUTPUT's CSV
 # MAGIC CSV can't hold nested structures, so any struct/array/map column in the
 # MAGIC result is serialized to a JSON string first. Spark writes a folder of part
 # MAGIC files, so we coalesce to one part and move it to the final file name.
@@ -192,24 +198,33 @@ for s in SOURCES:
 
 # COMMAND ----------
 
-result = spark.sql(QUERY)
-result = result.withColumn("LoadDate", lit(run_dt.strftime("%Y-%m-%d")))
-result = csv_safe(result)
+def write_single_csv(df, output_dir, output_file):
+    """Coalesce to one part file and move it to the final CSV name."""
+    tmp_dir = f"{output_dir}/_tmp"
+    (
+        df.coalesce(1)
+        .write.mode("overwrite")
+        .option("header", "true")
+        .csv(tmp_dir)
+    )
+    part = next(f.path for f in dbutils.fs.ls(tmp_dir) if f.name.endswith(".csv"))
+    dbutils.fs.rm(output_file, recurse=True)  # replace any existing file for this day
+    dbutils.fs.mv(part, output_file)
+    dbutils.fs.rm(tmp_dir, recurse=True)
 
-row_count = result.count()
-print(f"Join result -> {output_file}: {row_count:,} rows")
 
-# Write one part file to a temp dir, then move it to the final CSV name.
-tmp_dir = f"{output_dir}/_tmp"
-(
-    result.coalesce(1)
-    .write.mode("overwrite")
-    .option("header", "true")
-    .csv(tmp_dir)
-)
-part = next(f.path for f in dbutils.fs.ls(tmp_dir) if f.name.endswith(".csv"))
-dbutils.fs.rm(output_file, recurse=True)  # replace any existing file for this day
-dbutils.fs.mv(part, output_file)
-dbutils.fs.rm(tmp_dir, recurse=True)
+# Produce each output CSV from its own query, to its own folder.
+for o in OUTPUTS:
+    output_dir = (
+        f"abfss://{container}@{storage_account}.dfs.core.windows.net/"
+        f"{o['output_base_path'].strip('/')}/{date_folders}"
+    )
+    output_file = f"{output_dir}/{o['output_name']}_{load_date}.csv"
 
-print(f"Wrote {row_count:,} rows to {output_file}")
+    result = spark.sql(o["query"])
+    result = result.withColumn("LoadDate", lit(run_dt.strftime("%Y-%m-%d")))
+    result = csv_safe(result)
+
+    row_count = result.count()
+    write_single_csv(result, output_dir, output_file)
+    print(f"Wrote {row_count:,} rows to {output_file}")

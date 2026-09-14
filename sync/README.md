@@ -271,15 +271,19 @@ Notebook:
 
 ## How it works
 
-- **`SOURCES`.** Each entry is read from its `_date=<load_date>` partition,
-  exploded on `records_path` (default `items`), its record fields lifted to
-  top-level columns, and registered as a temp view named `view`.
-- **`QUERY`.** A Spark-SQL statement that joins those views into the output.
-  Reference each source by its `view` name (`courses`, `registrants`, …). Edit
-  the join key and selected columns to the real ClubSpark fields.
+- **`SOURCES`.** Each entry is read once from its `_date=<load_date>` partition
+  and registered as a temp view named `view`. `records_path` is only for records
+  wrapped in a top-level array **field** (e.g. Magento's `items`); ClubSpark
+  files whose root is a flat array use `records_path = None` (Spark reads each
+  element as a row directly under multiline JSON).
+- **`OUTPUTS`.** One entry per CSV — each has its own `query` (over the shared
+  views) and its own `output_base_path` / `output_name`. Add as many as you
+  like; the sources are read once and reused across all outputs, so multiple
+  CSVs to different folders live in a single notebook (no need to clone it).
 - **One day, all sources.** `load_date` (today, UTC) is applied to every
   source's `_date=` partition. Hard-code `YYYYMMDD` to backfill.
-- **Single file.** The join is coalesced to one part and moved to
-  `Coaching_YYYYMMDD.csv`; nested values are serialized to JSON strings for CSV.
-- **Open items.** Confirm the real join key/columns and the output path once a
+- **Single file.** Each output is coalesced to one part and moved to
+  `<output_name>_YYYYMMDD.csv` under `<output_base_path>/YYYY/MM/DD/`; nested
+  values are serialized to JSON strings for CSV.
+- **Open items.** Confirm the real join keys/columns and output paths once a
   sample of each feed is available.
