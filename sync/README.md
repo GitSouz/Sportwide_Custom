@@ -252,3 +252,34 @@ Notebook:
 - **Open items.** Confirm the real **input path** (`input_base_path`) and the
   ClubSpark JSON envelope, then set `RECORDS_PATH` / `COLUMNS` to the real
   booking fields.
+
+---
+
+# Reformat — join lake JSON sources → lake CSV (daily)
+
+A fourth notebook joins **multiple** ClubSpark JSON feeds with SQL and writes the
+result as a single header CSV (e.g. coaching courses × registrants).
+
+| | |
+|---|---|
+| **Sources** | one `_date=<load_date>/` folder per dataset under `LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/<DATASET>/` (recursive) |
+| **Output** | `.../NATIVE/ECBGLB/LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COACHING/YYYY/MM/DD/Coaching_YYYYMMDD.csv` |
+| **Format** | Single CSV file with header |
+
+Notebook:
+[`clubspark_coaching_join_to_csv.py`](clubspark_coaching_join_to_csv.py).
+
+## How it works
+
+- **`SOURCES`.** Each entry is read from its `_date=<load_date>` partition,
+  exploded on `records_path` (default `items`), its record fields lifted to
+  top-level columns, and registered as a temp view named `view`.
+- **`QUERY`.** A Spark-SQL statement that joins those views into the output.
+  Reference each source by its `view` name (`courses`, `registrants`, …). Edit
+  the join key and selected columns to the real ClubSpark fields.
+- **One day, all sources.** `load_date` (today, UTC) is applied to every
+  source's `_date=` partition. Hard-code `YYYYMMDD` to backfill.
+- **Single file.** The join is coalesced to one part and moved to
+  `Coaching_YYYYMMDD.csv`; nested values are serialized to JSON strings for CSV.
+- **Open items.** Confirm the real join key/columns and the output path once a
+  sample of each feed is available.
