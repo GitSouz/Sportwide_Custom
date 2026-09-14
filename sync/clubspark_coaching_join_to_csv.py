@@ -20,9 +20,11 @@
 # MAGIC %md
 # MAGIC ## Sources and join query
 # MAGIC - `SOURCES` — one entry per JSON dataset. Each is read from its
-# MAGIC   `_date=<load_date>/` folder, exploded on `records_path` (the top-level
-# MAGIC   array; `None` = don't explode) to one row per record, and registered as a
-# MAGIC   temp view named `view` with the record's fields as columns.
+# MAGIC   `_date=<load_date>/` folder and registered as a temp view named `view`.
+# MAGIC   `records_path` is only needed when records are wrapped in a top-level
+# MAGIC   array **field** (e.g. Magento's `items`). If the file's root is the array
+# MAGIC   itself (flat objects), leave `records_path = None` — with multiline JSON,
+# MAGIC   Spark reads each array element as a row directly.
 # MAGIC - `QUERY` — the Spark SQL that joins those views into the CSV output.
 # MAGIC
 # MAGIC TODO: set the real join keys / output columns once a sample of each feed is
@@ -34,12 +36,12 @@ SOURCES = [
     {
         "view": "courses",
         "base_path": "LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COACHING_COURSES",
-        "records_path": "items",
+        "records_path": None,  # file root is a flat array -> rows read directly
     },
     {
         "view": "registrants",
         "base_path": "LANDING/ECBGLB/CLUBSPARK/ECB_CLUBSPARK/COACHING_REGISTRANTS",
-        "records_path": "items",
+        "records_path": None,  # file root is a flat array -> rows read directly
     },
 ]
 
@@ -47,15 +49,18 @@ SOURCES = [
 # the selected columns to the real ClubSpark fields.
 QUERY = """
 SELECT
-    c.id            AS CourseID,
-    c.name          AS CourseName,
-    r.id            AS RegistrantID,
-    r.first_name    AS FirstName,
-    r.last_name     AS LastName,
-    r.status        AS RegistrationStatus
+    c.ID               AS CourseID,
+    c.Name             AS CourseName,
+    c.Code             AS CourseCode,
+    c.CoachingSchemeID AS CoachingSchemeID,
+    c.Cost             AS Cost,
+    c.MinimumAge       AS MinimumAge,
+    c.MaximumAge       AS MaximumAge,
+    -- TODO: real registrant columns/join key once a REGISTRANTS sample is shared
+    r.ID               AS RegistrantID
 FROM courses c
 JOIN registrants r
-    ON r.course_id = c.id
+    ON r.CourseID = c.ID   -- TODO: confirm the registrants -> courses key
 """
 
 # COMMAND ----------
