@@ -101,9 +101,11 @@ storage_secret_scope = "key-vault"
 storage_secret_key = "prod-blob-connection-string"
 
 run_dt = datetime.strptime(load_date, "%Y%m%d").replace(tzinfo=timezone.utc)
-date_folders = run_dt.strftime("%Y/%m/%d")  # YYYY/MM/DD for output paths
+run_time = datetime.now(timezone.utc).strftime("%H%M%S")  # HHMMSS of this run
+partition = f"_date={load_date}/_time={run_time}"  # landing-zone output partition
 
 print(f"Load date: {load_date}")
+print(f"Partition: {partition}")
 print(f"Outputs:   {len(OUTPUTS)}")
 
 # COMMAND ----------
@@ -217,7 +219,7 @@ def write_single_csv(df, output_dir, output_file):
 for o in OUTPUTS:
     output_dir = (
         f"abfss://{container}@{storage_account}.dfs.core.windows.net/"
-        f"{o['output_base_path'].strip('/')}/{date_folders}"
+        f"{o['output_base_path'].strip('/')}/{partition}"
     )
     output_file = f"{output_dir}/{o['output_name']}_{load_date}.csv"
 

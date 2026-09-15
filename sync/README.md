@@ -283,7 +283,9 @@ Notebook:
 - **One day, all sources.** `load_date` (today, UTC) is applied to every
   source's `_date=` partition. Hard-code `YYYYMMDD` to backfill.
 - **Single file.** Each output is coalesced to one part and moved to
-  `<output_name>_YYYYMMDD.csv` under `<output_base_path>/YYYY/MM/DD/`; nested
-  values are serialized to JSON strings for CSV.
+  `<output_name>_YYYYMMDD.csv` under
+  `<output_base_path>/_date=YYYYMMDD/_time=HHMMSS/` (landing-zone layout — `_date`
+  is the day processed, `_time` is the run time); nested values are serialized to
+  JSON strings for CSV.
 - **Open items.** Confirm the real join keys/columns and output paths once a
   sample of each feed is available.
